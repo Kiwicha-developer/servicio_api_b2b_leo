@@ -13,7 +13,6 @@ class Program
 {
     public static void Main(string[] args)
     {
-        // 1. Configura Serilog antes del builder
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Information()
             .WriteTo.File(
@@ -27,10 +26,9 @@ class Program
         {
             Log.Information("Iniciando el servicio...");
 
-            // 2. Usa Serilog en el host builder
             Host.CreateDefaultBuilder(args)
                 .UseWindowsService()
-                .UseSerilog() // Esto integra Serilog al sistema de logging
+                .UseSerilog() 
                 .ConfigureServices((hostContext, services) =>
                 {
                     services.AddHostedService<ParquetService>();
@@ -44,7 +42,7 @@ class Program
         }
         finally
         {
-            Log.CloseAndFlush(); // Asegura que todo se escriba en el archivo
+            Log.CloseAndFlush(); 
         }
     }
 }

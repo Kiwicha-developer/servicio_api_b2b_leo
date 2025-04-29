@@ -1,28 +1,22 @@
 ﻿//var builder = WebApplication.CreateBuilder(args);
 //var app = builder.Build();
 
-using Apache.Arrow;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using ParquetSharp;
-using ParquetSharp.Arrow;
-using ParquetSharp.Schema;
 using System.Diagnostics;
-using System.IO.Pipelines;
-using System.Linq;
 using System.Text.Json;
 
 public class ParquetService : BackgroundService
 {
     //declara la variable _logger para capturar los errores de la clase ParquetService
     private readonly ILogger<ParquetService> _logger;
-    private readonly IHostApplicationLifetime _appLifetime;
     private string _upload_folder = "D:\\Trabajo_Grupo_Vega\\Archivos_Pruebas\\Temp_api_parque";
+    private static string _sesionFolder = "";
     //private string _upload_folder = "\\192.168.2.72\\p&g\\envio_Radar";
 
-    public ParquetService(ILogger<ParquetService> logger, IHostApplicationLifetime appLifetime)
+    public ParquetService(ILogger<ParquetService> logger)
     {
         _logger = logger;
-        _appLifetime = appLifetime;
     }
 
     //metodo para medir la memoria de los procesos
@@ -98,7 +92,13 @@ public class ParquetService : BackgroundService
                 return Results.BadRequest(new { error = "Faltan metadatos del chunk o periodo" });
             }
 
-            string tempDir = CreateTempFolderAsync(tempFolder, periodo);
+            string tempDir = _sesionFolder;
+
+            if (int.Parse(chunkNumber) == 1)
+            {
+                tempDir = CreateTempFolderAsync(tempFolder, periodo);
+            }
+            
 
             if (string.IsNullOrWhiteSpace(tempDir))
             {
@@ -115,7 +115,9 @@ public class ParquetService : BackgroundService
 
             var existingChunks = Directory.GetFiles(tempDir, "*.parquet");
 
-            if (existingChunks.Length == int.Parse(totalChunks))
+            
+
+            if (int.Parse(chunkNumber) == int.Parse(totalChunks))
             {
                 LogMemoryUsage("Iniciando Fusion de Chunks");
                 List<string> orderChunks = existingChunks.OrderBy(f => int.Parse(Path.GetFileNameWithoutExtension(f).Split('_')[1])).ToList();
@@ -123,11 +125,12 @@ public class ParquetService : BackgroundService
 
                 try
                 {
+                    Console.WriteLine($"directorio finla: {JsonSerializer.Serialize(orderChunks)}");
                     // Realizar la fusión
                     MergeParquetFiles(orderChunks, finalFilePath);
                     // Limpieza de archivos temporales
                     DeleteTempFolderAsync(orderChunks);
-
+                    _sesionFolder = "";
                     return Results.Ok(new { message = "Todos los chunks recibidos y fusionados correctamente", final_file = finalFilePath });
                 }
                 catch (Exception ex)
@@ -150,12 +153,12 @@ public class ParquetService : BackgroundService
 
     private void MergeParquetFiles(List<string> chunkFiles, string outputFile)
     {
+        
         LogMemoryUsage("Inicio de Fusion");
         try
         {
             //Obtenemos el primer file y obtenemos el esquema a travez de un metodo personalizado
             using var readerFile = new ParquetFileReader(chunkFiles[0]);
-
             ParquetSharp.Column[] columns= GetColumns(readerFile);
 
             using var outputWriter = new ParquetFileWriter(outputFile, columns);
@@ -172,6 +175,8 @@ public class ParquetService : BackgroundService
                     for (int columnIndex = 0; columnIndex < columns.Length; columnIndex++)
                     {
                         var columnDataType = columns[columnIndex].GetType().GenericTypeArguments[0];
+                        var descriptor = reader.FileMetaData.Schema.Column(columnIndex);
+                        bool isNullable = descriptor.MaxDefinitionLevel > 0;
 
                         if (columnDataType == typeof(string))
                         {
@@ -180,38 +185,128 @@ public class ParquetService : BackgroundService
                             using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<string>();
                             columnWriter.WriteBatch(data);
                         }
-                        else if (columnDataType == typeof(int) || columnDataType == typeof(int?))
+                        else if (columnDataType == typeof(bool))
                         {
-                            using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<int?>();
-                            var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
-                            using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<int?>();
-                            columnWriter.WriteBatch(data);
+                            if (isNullable)
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<bool?>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<bool?>();
+                                columnWriter.WriteBatch(data);
+                            }
+                            else
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<bool>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<bool>();
+                                columnWriter.WriteBatch(data);
+                            }
                         }
-                        else if (columnDataType == typeof(long) || columnDataType == typeof(long?))
+                        else if (columnDataType == typeof(int))
                         {
-                            using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<long?>();
-                            var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
-                            using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<long?>();
-                            columnWriter.WriteBatch(data);
+                            if (isNullable)
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<int?>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<int?>();
+                                columnWriter.WriteBatch(data);
+                            }
+                            else
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<int>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<int>();
+                                columnWriter.WriteBatch(data);
+                            }
                         }
-                        else if (columnDataType == typeof(double) || columnDataType == typeof(double?))
+                        else if (columnDataType == typeof(long))
                         {
-                            using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<double?>();
-                            var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
-                            using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<double?>();
-                            columnWriter.WriteBatch(data);
+                            if (isNullable)
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<long?>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<long?>();
+                                columnWriter.WriteBatch(data);
+                            }
+                            else
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<long>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<long>();
+                                columnWriter.WriteBatch(data);
+                            }
                         }
-                        else if (columnDataType == typeof(decimal) || columnDataType == typeof(decimal?))
+                        else if (columnDataType == typeof(float))
+                        {
+                            if (isNullable)
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<float?>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<float?>();
+                                columnWriter.WriteBatch(data);
+                            }
+                            else
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<float>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<float>();
+                                columnWriter.WriteBatch(data);
+                            }
+                        }
+                        else if (columnDataType == typeof(double))
+                        {
+                            if (isNullable)
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<double?>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<double?>();
+                                columnWriter.WriteBatch(data);
+                            }
+                            else
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<double>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<double>();
+                                columnWriter.WriteBatch(data);
+                            }
+                        }
+                        else if (columnDataType == typeof(decimal))
                         {
                             using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<decimal?>();
                             var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
                             using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<decimal?>();
                             columnWriter.WriteBatch(data);
                         }
+                        else if (columnDataType == typeof(byte[]))
+                        {
+                            using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<byte[]>();
+                            var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                            using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<byte[]>();
+                            columnWriter.WriteBatch(data);
+                        }
+                        else if (columnDataType == typeof(DateTime))
+                        {
+                            if (isNullable)
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<DateTime?>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<DateTime?>();
+                                columnWriter.WriteBatch(data);
+                            }
+                            else
+                            {
+                                using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<DateTime>();
+                                var data = columnReader.ReadAll((int)rowGroupReader.MetaData.NumRows);
+                                using var columnWriter = rowGroupWriter.NextColumn().LogicalWriter<DateTime>();
+                                columnWriter.WriteBatch(data);
+                            }
+                        }
                         else
                         {
+                            Console.WriteLine($"Tipo no soportado: {columnDataType}");
                             throw new NotSupportedException($"Tipo no soportado: {columnDataType}");
                         }
+
                     }
                 }
             }
@@ -235,6 +330,7 @@ public class ParquetService : BackgroundService
             string timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
             var tempDir = Path.Combine(_tempFolder, $"{periodo}_{timestamp}");
 
+            _sesionFolder = tempDir;
             Directory.CreateDirectory(tempDir);
 
             LogMemoryUsage($"Carpeta temporal {tempDir} creada");
@@ -324,7 +420,7 @@ public class ParquetService : BackgroundService
                     return new ParquetSharp.Column<int?>(columnName);
 
                 case 2: // INT64
-                    return new ParquetSharp.Column<long?>(columnName);
+                    return new ParquetSharp.Column<long>(columnName);
 
                 case 3: // INT96
                         // long o byte[]
@@ -355,7 +451,7 @@ public class ParquetService : BackgroundService
 
                 case 12: // DECIMAL
                          // Para Decimal, hay que especificar la precisión y la escala
-                    return new Column<decimal?>(columnName, LogicalType.Decimal(
+                    return new Column<decimal?>(columnName, ParquetSharp.LogicalType.Decimal(
                                                     precision: descriptor.TypePrecision > 0 ? descriptor.TypePrecision : precisionDefault,
                                                     scale: descriptor.TypeScale > 0 ? descriptor.TypeScale : scaleDefault
                                                 ));
