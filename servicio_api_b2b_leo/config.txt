@@ -1,0 +1,14 @@
+#--------------comando para ejecutar en segundo plano-------------------
+#sc create MiServicio binPath= "C:\MiApp\miarchivo.exe" start= auto
+
+#--------------comando para detener servicio-------------------
+#sc stop NombreServicio
+
+#--------------comando para eliminar servicio-------------------
+#sc delete NombreServicio
+
+#Url de aalojamiento
+URL = http://0.0.0.0:3025
+
+#Ruta donde se escriben los parquet
+FOLDER = D:\Trabajo_Grupo_Vega\Archivos_Pruebas\proba_cambio_carpeta
