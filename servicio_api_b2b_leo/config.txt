@@ -8,7 +8,7 @@
 #sc delete NombreServicio
 
 #Url de aalojamiento
-URL = http://0.0.0.0:3025
+URL = http://localhost:8080
 
 #Ruta donde se escriben los parquet
-FOLDER = D:\Trabajo_Grupo_Vega\Archivos_Pruebas\proba_cambio_carpeta
+FOLDER = D:\mi_folder
