@@ -10,9 +10,7 @@ public class ParquetService : BackgroundService
 {
     //declara la variable _logger para capturar los errores de la clase ParquetService
     private readonly ILogger<ParquetService> _logger;
-    private string _upload_folder = "D:\\Trabajo_Grupo_Vega\\Archivos_Pruebas\\Temp_api_parque";
     private static string _sesionFolder = "";
-    //private string _upload_folder = @"\\192.168.2.72\p&g\envio_Radar";
 
     public ParquetService(ILogger<ParquetService> logger)
     {
