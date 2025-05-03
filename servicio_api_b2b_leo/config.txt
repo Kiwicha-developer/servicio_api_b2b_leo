@@ -8,7 +8,7 @@
 #sc delete NombreServicio
 
 #Url de aalojamiento
-URL = http://localhost:8080
+URL = http://localhost:3025
 
 #Ruta donde se escriben los parquet
-FOLDER = D:\mi_folder
+FOLDER = D:\Trabajo_Grupo_Vega\Archivos_Pruebas\Temp_api_parque

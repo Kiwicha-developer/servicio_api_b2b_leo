@@ -1,12 +1,4 @@
-//Inicia el servicio usando la clase ParquetService
-//Host.CreateDefaultBuilder(args)
-//    .UseWindowsService()
-//    .ConfigureServices((hostContext, services) =>
-//    {
-//        services.AddHostedService<ParquetService>();
-//    })
-//    .Build()
-//    .Run();
+
 using Serilog;
 
 class Program

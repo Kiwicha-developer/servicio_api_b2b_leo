@@ -105,6 +105,12 @@ public class ParquetService : BackgroundService
                 return Results.BadRequest(new { error = "Faltan metadatos del chunk o periodo" });
             }
 
+            if (periodo == "auto")
+            {
+                periodo = periodo = DateTime.Now.ToString("yyyyMM");
+
+            }
+
             string tempDir = _sesionFolder;
 
             if (int.Parse(chunkNumber) == 1)
@@ -190,6 +196,10 @@ public class ParquetService : BackgroundService
                         var descriptor = reader.FileMetaData.Schema.Column(columnIndex);
                         bool isNullable = descriptor.MaxDefinitionLevel > 0;
 
+                        Console.WriteLine($"Tipo Column: {columns[columnIndex].GetType()}");
+                        Console.WriteLine($"Tipo Reader: {descriptor.PhysicalType}");
+                        Console.WriteLine($"Tipo ReaderLogico: {descriptor.LogicalType}");
+
                         void TransferColumn<T>()
                         {
                                 using var columnReader = rowGroupReader.Column(columnIndex).LogicalReader<T>();
@@ -212,6 +222,28 @@ public class ParquetService : BackgroundService
                             else
                             {
                                 TransferColumn<bool>();
+                            }
+                        }
+                        else if (columnDataType == typeof(byte) || columnDataType == typeof(byte?))
+                        {
+                            if (isNullable)
+                            {
+                                TransferColumn<byte?>();
+                            }
+                            else
+                            {
+                                TransferColumn<byte>();
+                            }
+                        }
+                        else if (columnDataType == typeof(short) || columnDataType == typeof(short?))
+                        {
+                            if (isNullable)
+                            {
+                                TransferColumn<short?>();
+                            }
+                            else
+                            {
+                                TransferColumn<short>();
                             }
                         }
                         else if (columnDataType == typeof(int) || columnDataType == typeof(int?))
@@ -269,10 +301,44 @@ public class ParquetService : BackgroundService
                                 TransferColumn<decimal>();
                             }
                         }
+                        else if (columnDataType == typeof(Guid) || columnDataType == typeof(Guid?))
+                        {
+                            if (isNullable)
+                            {
+                                TransferColumn<Guid?>();
+                            }
+                            else
+                            {
+                                TransferColumn<Guid>();
+                            }
+                        }
+                        else if (columnDataType == typeof(TimeSpan) || columnDataType == typeof(TimeSpan?))
+                        {
+                            if (isNullable)
+                            {
+                                TransferColumn<TimeSpan?>();
+                            }
+                            else
+                            {
+                                TransferColumn<TimeSpan>();
+                            }
+                        }
                         else if (columnDataType == typeof(byte[]))
                         {
                             TransferColumn<byte[]>();
                         }
+                        else if (columnDataType == typeof(ParquetSharp.Date) || columnDataType == typeof(ParquetSharp.Date?))
+                        {
+                            if (isNullable)
+                            {
+                                TransferColumn<ParquetSharp.Date?>();
+                            }
+                            else
+                            {
+                                TransferColumn<ParquetSharp.Date>();
+                            }
+                        }
+
                         else if (columnDataType == typeof(DateTime) || columnDataType == typeof(DateTime?))
                         {
                             if (isNullable)
@@ -284,6 +350,7 @@ public class ParquetService : BackgroundService
                                 TransferColumn<DateTime>();
                             }
                         }
+
                         else
                         {
                             Console.WriteLine($"Tipo no soportado: {columnDataType}");
@@ -393,117 +460,135 @@ public class ParquetService : BackgroundService
     {
         try
         {
-            //Console.WriteLine($"LogicalType :{descriptor.PhysicalType}");
-            //Console.WriteLine($"LogicalType entero :{(int)descriptor.PhysicalType}");
-            //Console.WriteLine($"si es nulo entero :{descriptor.MaxDefinitionLevel}");
-            bool isNullable = descriptor.MaxDefinitionLevel > 0;
+            Console.WriteLine($"LogicalType: {descriptor.LogicalType}");
+            Console.WriteLine($"LogicalType entero: {descriptor.LogicalType.Type}");
+            Console.WriteLine($"PhysicalType: {descriptor.PhysicalType}");
+            Console.WriteLine($"IsNullable: {descriptor.MaxDefinitionLevel > 0}");
 
+            bool isNullable = descriptor.MaxDefinitionLevel > 0;
             int precisionDefault = 18;
             int scaleDefault = 2;
 
-            switch ((int)descriptor.PhysicalType)
+            switch (descriptor.PhysicalType)
             {
-                case 0: // BOOLEAN
-                    return isNullable ? new ParquetSharp.Column<bool?>(columnName) :
-                                        new ParquetSharp.Column<bool>(columnName);
+                case PhysicalType.Boolean:
+                    return isNullable ? new ParquetSharp.Column<bool?>(columnName)
+                                        : new ParquetSharp.Column<bool>(columnName);
 
-                case 1: // INT32
-                    return isNullable ?  new ParquetSharp.Column<int?>(columnName) :
-                                        new ParquetSharp.Column<int>(columnName);
+                case PhysicalType.Int32:
+                    switch (descriptor.LogicalType.Type)
+                    {
+                        case LogicalTypeEnum.Date:
+                            return isNullable
+                                ? new ParquetSharp.Column<ParquetSharp.Date?>(columnName)
+                                : new ParquetSharp.Column<ParquetSharp.Date>(columnName);
 
-                case 2: // INT64
-                    return isNullable ? new ParquetSharp.Column<long?>(columnName) :
-                                       new ParquetSharp.Column<long>(columnName);
-                case 3: // INT96
-                        // long o byte[]
-                    return new ParquetSharp.Column<byte[]>(columnName);
+                        case LogicalTypeEnum.Int:
+                            if (descriptor.LogicalType is IntLogicalType intType)
+                            {
+                                var bitWidth = intType.BitWidth;
 
-                case 4: // FLOAT
-                    return isNullable ? new ParquetSharp.Column<float?>(columnName) :
-                                       new ParquetSharp.Column<float>(columnName);
+                                if (bitWidth == 8)
+                                {
+                                    return isNullable
+                                        ? new ParquetSharp.Column<byte?>(columnName)
+                                        : new ParquetSharp.Column<byte>(columnName);
+                                }
+                                else if (bitWidth == 16)
+                                {
+                                    return isNullable
+                                        ? new ParquetSharp.Column<short?>(columnName)
+                                        : new ParquetSharp.Column<short>(columnName);
+                                }
+                            }
 
-                case 5: // DOUBLE
-                    return isNullable ? new ParquetSharp.Column<double?>(columnName) :
-                                       new ParquetSharp.Column<double>(columnName);
+                            // Fallback a int
+                            return isNullable
+                                ? new ParquetSharp.Column<int?>(columnName)
+                                : new ParquetSharp.Column<int>(columnName);
 
-                case 7: // FIXED_LEN_BYTE_ARRAY
-                    return new ParquetSharp.Column<byte[]>(columnName);
-                case 6: // BYTE_ARRAY (STRING)
+                        default:
+                            return isNullable
+                                ? new ParquetSharp.Column<int?>(columnName)
+                                : new ParquetSharp.Column<int>(columnName);
+                    }
+
+
+                case PhysicalType.Int64:
+                    switch (descriptor.LogicalType.Type)
+                    {
+                        case LogicalTypeEnum.Timestamp:
+                            return isNullable
+                                    ? new ParquetSharp.Column<DateTime?>(columnName)
+                                    : new ParquetSharp.Column<DateTime>(columnName);
+                        case LogicalTypeEnum.Time:
+                            return isNullable
+                                    ? new ParquetSharp.Column<TimeSpan?>(columnName)
+                                    : new ParquetSharp.Column<TimeSpan>(columnName);
+                        default:
+                            return isNullable
+                                ? new ParquetSharp.Column<long?>(columnName)
+                                : new ParquetSharp.Column<long>(columnName);
+                    }
+
+                case PhysicalType.Int96:
+                    return isNullable ? new ParquetSharp.Column<DateTime?>(columnName)
+                                        : new ParquetSharp.Column<DateTime>(columnName);
+
+                case PhysicalType.Float:
+                    return isNullable
+                        ? new ParquetSharp.Column<float?>(columnName)
+                        : new ParquetSharp.Column<float>(columnName);
+
+                case PhysicalType.Double:
+                    return isNullable
+                        ? new ParquetSharp.Column<double?>(columnName)
+                        : new ParquetSharp.Column<double>(columnName);
+
+                case PhysicalType.ByteArray:
                     return new ParquetSharp.Column<string>(columnName);
 
-                case 8: // DATE
-                    return isNullable ? new ParquetSharp.Column<DateTime?>(columnName) :
-                                       new ParquetSharp.Column<DateTime>(columnName);
+                case PhysicalType.FixedLenByteArray:
+                    switch (descriptor.LogicalType.Type)
+                    {
+                        case LogicalTypeEnum.Decimal:
+                            int precision = descriptor.TypePrecision > 0 ? descriptor.TypePrecision : precisionDefault;
+                            int scale = descriptor.TypeScale > 0 ? descriptor.TypeScale : scaleDefault;
+                            return isNullable
+                                ? new ParquetSharp.Column<decimal?>(columnName, LogicalType.Decimal(precision, scale))
+                                : new ParquetSharp.Column<decimal>(columnName, LogicalType.Decimal(precision, scale));
 
-                case 9: // TIME_MILLIS
-                    return isNullable ? new ParquetSharp.Column<TimeSpan?>(columnName) :
-                                       new ParquetSharp.Column<TimeSpan>(columnName);
+                        case LogicalTypeEnum.Uuid:
+                            return isNullable
+                                ? new ParquetSharp.Column<Guid?>(columnName,LogicalType.Uuid())
+                                : new ParquetSharp.Column<Guid>(columnName, LogicalType.Uuid());
 
-                case 10: // TIMESTAMP_MILLIS
-                    return isNullable ? new ParquetSharp.Column<DateTime?>(columnName) :
-                                       new ParquetSharp.Column<DateTime>(columnName);
+                        case LogicalTypeEnum.Interval:
+                            return new ParquetSharp.Column<byte[]>(columnName);
 
-                case 11: // TIMESTAMP_MICROS
-                    return isNullable ? new ParquetSharp.Column<DateTime?>(columnName) :
-                                       new ParquetSharp.Column<DateTime>(columnName);
+                        default:
+                            throw new NotSupportedException(
+                                $"FixedLenByteArray con LogicalType '{descriptor.LogicalType.Type}' no está soportado aún para la columna '{columnName}'."
+                            );
+                    }
 
-                case 12: // DECIMAL
-                         // Para Decimal, hay que especificar la precisión y la escala
-                    return isNullable ? new Column<decimal?>(columnName, ParquetSharp.LogicalType.Decimal(
-                                                    precision: descriptor.TypePrecision > 0 ? descriptor.TypePrecision : precisionDefault,
-                                                    scale: descriptor.TypeScale > 0 ? descriptor.TypeScale : scaleDefault
-                                                )) :
-                                       new Column<decimal>(columnName, ParquetSharp.LogicalType.Decimal(
-                                                    precision: descriptor.TypePrecision > 0 ? descriptor.TypePrecision : precisionDefault,
-                                                    scale: descriptor.TypeScale > 0 ? descriptor.TypeScale : scaleDefault
-                                                ));
+                case PhysicalType.Undefined:
+                    _logger.LogError($"PhysicalType 'Undefined' no es válido para la columna '{columnName}'.");
+                    throw new NotSupportedException($"PhysicalType 'Undefined' no es válido para la columna '{columnName}'.");
 
-                case 13: // UINT_8
-                    return new ParquetSharp.Column<byte>(columnName);
-
-                case 14: // UINT_16
-                    return new ParquetSharp.Column<ushort>(columnName);
-
-                case 15: // UINT_32
-                    return new ParquetSharp.Column<uint>(columnName);
-
-                case 16: // UINT_64
-                    return new ParquetSharp.Column<ulong>(columnName);
-
-                case 17: // JSON
-                    return new ParquetSharp.Column<string>(columnName);
-
-                case 18: // UUID
-                    return new ParquetSharp.Column<Guid>(columnName);
-
-                case 19: // INTERVAL
-                    return new ParquetSharp.Column<TimeSpan>(columnName);
-
-                case 20: // LIST
-                    return new ParquetSharp.Column<string[]>(columnName);
-
-                case 21: // MAP
-                    return new ParquetSharp.Column<Dictionary<string, object>>(columnName);
-
-                case 22: // STRUCT
-                    return new ParquetSharp.Column<object>(columnName);
-
-                case 23: // UNION
-                    return new ParquetSharp.Column<object>(columnName);
-
-                case 24: // ENUM
-                    return new ParquetSharp.Column<int>(columnName);
                 default:
-                    throw new NotSupportedException($"Tipo lógico no soportado: {descriptor.LogicalType.Type}");
+                    _logger.LogError($"LogicalType no soportado: {descriptor.LogicalType.Type}");
+                    throw new NotSupportedException($"LogicalType no soportado: {descriptor.LogicalType.Type}");
             }
+
         }
         catch (Exception ex)
         {
-            _logger.LogError("Error en obtener objeto Column" + ex);
-            throw new NotSupportedException($"Tipo lógico no soportado: {descriptor.LogicalType.Type}");
+            _logger.LogError($"Error al procesar la columna {columnName}: {ex.Message}");
+            throw new NotSupportedException($"Tipo lógico no soportado: {descriptor.LogicalType.Type}", ex);
         }
-        
     }
+
 
     private Dictionary<string, string> ReadConfiguration(string rutaArchivo)
     {
